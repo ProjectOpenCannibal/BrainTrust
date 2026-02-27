@@ -10,7 +10,9 @@
       "model": { "type": "string", "default": "sonnet" },
       "criticModel": { "type": "string", "default": "sonnet" },
       "synthModel": { "type": "string", "default": "opus" },
-      "timeoutSeconds": { "type": "integer", "minimum": 10, "maximum": 300, "default": 90 }
+      "timeoutSeconds": { "type": "integer", "minimum": 10, "maximum": 300, "default": 90 },
+      "minParticipatingAgents": { "type": "integer", "minimum": 1, "maximum": 4, "default": 2 },
+      "minAnsweringAgents": { "type": "integer", "minimum": 1, "maximum": 4, "default": 2 }
     }
   }
 }

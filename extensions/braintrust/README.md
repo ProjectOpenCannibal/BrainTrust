@@ -1,25 +1,27 @@
-# Braintrust Plugin (Scaffold)
+# Braintrust Plugin (MVP Control Plane)
 
 Feature-flagged plugin path for multi-agent orchestration in OpenClaw.
 
-## Current behavior
-- Provides `/braintrust` control command (`on|off|status`).
-- Adds system context on `before_prompt_build` when enabled.
-- Emits lightweight telemetry to logs on LLM input/output.
+## Current behavior (implemented)
+- `/braintrust on|off|status|unavailable`
+- Configurable team size / strategy / model roles
+- Quorum contract configuration (`minParticipatingAgents`, `minAnsweringAgents`)
+- Prompt injection with explicit quorum policy + unavailable contract
+- Logging hooks for `llm_input` and `llm_output`
+- Deterministic quorum policy helpers + unit tests
 
-## Why scaffold first?
-OpenClaw plugin hooks can shape prompts and lifecycle behavior immediately, but full per-turn fan-out/fan-in orchestration (spawn N workers, merge outputs, stream final) needs one additional integration point in core runtime. This plugin establishes the config/command/hook surface first.
+## Important limitation (still pending)
+This plugin **does not yet perform true parallel fan-out/fan-in orchestration** by itself.
+It sets control policy and prompt/lifecycle behavior; runtime fan-out wiring remains a core integration task.
 
-## Next wiring step
-- Add a runtime orchestration hook (or gateway method) that plugin can call for:
-  - parallel candidate runs
-  - synthesis pass
-  - deterministic final output substitution
-
-
-## Quorum contract (implemented)
-- Minimum participating agents: 2
-- Minimum answering agents: 2
-- If quorum fails, plugin must return explicit unavailable notice instead of pretending a panel answer.
+## Quorum contract
+- Minimum participating agents: default `2`
+- Minimum answering agents: default `2`
+- If quorum fails, return explicit unavailable notice instead of pretending panel output.
 
 See `src/policy.ts` and `src/policy.test.ts`.
+
+## Test
+```bash
+pnpm vitest run extensions/braintrust/src/policy.test.ts extensions/braintrust/src/settings.test.ts
+```

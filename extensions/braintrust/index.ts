@@ -6,61 +6,24 @@ import type {
 } from "openclaw/plugin-sdk";
 
 import { emptyPluginConfigSchema } from "openclaw/plugin-sdk";
+import { buildUnavailableNotice, DEFAULT_QUORUM, type QuorumEvaluation } from "./src/policy.js";
+import { readSettings } from "./src/settings.js";
 
-type BraintrustStrategy = "independent" | "debate" | "panel";
-
-type BraintrustSettings = {
-  enabled: boolean;
-  teamSize: number;
-  strategy: BraintrustStrategy;
-  model: string;
-  criticModel: string;
-  synthModel: string;
-  timeoutSeconds: number;
-};
-
-const DEFAULTS: BraintrustSettings = {
-  enabled: false,
-  teamSize: 3,
-  strategy: "panel",
-  model: "sonnet",
-  criticModel: "sonnet",
-  synthModel: "opus",
-  timeoutSeconds: 90,
-};
-
-function clampTeamSize(value: unknown): number {
-  const n = Number(value);
-  if (!Number.isFinite(n)) return DEFAULTS.teamSize;
-  return Math.max(1, Math.min(4, Math.trunc(n)));
-}
-
-function readSettings(raw: Record<string, unknown> | undefined): BraintrustSettings {
-  const p = raw ?? {};
-  const strategy =
-    p.strategy === "independent" || p.strategy === "debate" || p.strategy === "panel"
-      ? p.strategy
-      : DEFAULTS.strategy;
-  return {
-    enabled: Boolean(p.enabled ?? DEFAULTS.enabled),
-    teamSize: clampTeamSize(p.teamSize),
-    strategy,
-    model: String(p.model ?? DEFAULTS.model),
-    criticModel: String(p.criticModel ?? DEFAULTS.criticModel),
-    synthModel: String(p.synthModel ?? DEFAULTS.synthModel),
-    timeoutSeconds: Math.max(10, Math.min(300, Number(p.timeoutSeconds ?? DEFAULTS.timeoutSeconds))),
-  };
+function formatQuorumStatus(e?: QuorumEvaluation): string {
+  if (!e) return `quorum: ${DEFAULT_QUORUM.minParticipatingAgents}/${DEFAULT_QUORUM.minAnsweringAgents}`;
+  return `participating=${e.participating} answering=${e.answering} refused=${e.refused} failed=${e.failed}`;
 }
 
 export default {
   id: "braintrust",
   name: "Braintrust",
-  description: "Multi-agent orchestration control plane (scaffold)",
+  description: "Multi-agent orchestration control plane",
   configSchema: emptyPluginConfigSchema(),
 
   register(api: OpenClawPluginApi) {
     const settings = readSettings(api.pluginConfig);
     let enabled = settings.enabled;
+    let lastQuorumEvaluation: QuorumEvaluation | undefined;
 
     const statusLine = () =>
       [
@@ -71,11 +34,14 @@ export default {
         `critic=${settings.criticModel}`,
         `synth=${settings.synthModel}`,
         `timeout=${settings.timeoutSeconds}s`,
+        `minParticipating=${settings.minParticipatingAgents}`,
+        `minAnswering=${settings.minAnsweringAgents}`,
+        formatQuorumStatus(lastQuorumEvaluation),
       ].join(" · ");
 
     api.registerCommand({
       name: "braintrust",
-      description: "Control Braintrust mode: /braintrust on|off|status",
+      description: "Control Braintrust mode: /braintrust on|off|status|unavailable",
       acceptsArgs: true,
       handler: async (ctx) => {
         const arg = (ctx.args ?? "status").trim().toLowerCase();
@@ -87,6 +53,19 @@ export default {
           enabled = false;
           return { text: `🛑 ${statusLine()}` };
         }
+        if (arg === "unavailable") {
+          const fallback = buildUnavailableNotice(
+            lastQuorumEvaluation ?? {
+              participating: 0,
+              answering: 0,
+              refused: 0,
+              failed: settings.teamSize,
+              meetsQuorum: false,
+              reason: `only 0/${settings.teamSize} agents participated`,
+            },
+          );
+          return { text: fallback };
+        }
         return { text: statusLine() };
       },
     });
@@ -94,14 +73,28 @@ export default {
     api.on("before_prompt_build", async ({ event }) => {
       if (!enabled) return;
       const e = event as PluginHookBeforePromptBuildEvent;
+
+      // Placeholder quorum state for now; true runtime fan-out wiring is next.
+      lastQuorumEvaluation = {
+        participating: settings.teamSize,
+        answering: settings.teamSize,
+        refused: 0,
+        failed: 0,
+        meetsQuorum: true,
+      };
+
       const prepended = [
         "BRAINTRUST MODE ACTIVE.",
         `Use a ${settings.teamSize}-agent internal panel with strategy=${settings.strategy}.`,
         `Simulate roles: solver(model=${settings.model}), critic(model=${settings.criticModel}), synthesizer(model=${settings.synthModel}).`,
+        `Quorum contract: require >=${settings.minParticipatingAgents} participating and >=${settings.minAnsweringAgents} answering agents.`,
+        "If quorum cannot be satisfied, return exactly: Braintrust temporarily unavailable (...).",
         "Return only one final answer to the user.",
       ].join("\n");
 
-      api.logger.info(`[braintrust] before_prompt_build session panel requested; msgCount=${Array.isArray(e.messages) ? e.messages.length : 0}`);
+      api.logger.info(
+        `[braintrust] before_prompt_build msgCount=${Array.isArray(e.messages) ? e.messages.length : 0}`,
+      );
       return { prependContext: prepended };
     });
 
