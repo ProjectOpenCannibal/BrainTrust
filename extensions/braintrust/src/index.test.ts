@@ -4,7 +4,7 @@ vi.mock("openclaw/plugin-sdk", () => ({
   emptyPluginConfigSchema: () => ({}),
 }));
 
-type HookHandler = (args: { event: unknown; context?: unknown }) => Promise<{ prependContext?: string } | void>;
+type HookHandler = (args: unknown) => Promise<{ prependContext?: string } | void>;
 
 type FakeApi = {
   pluginConfig: Record<string, unknown>;
@@ -76,4 +76,43 @@ describe("braintrust plugin runtime integration", () => {
     expect(out?.prependContext).toContain("BRAINTRUST MODE ACTIVE.");
     expect(out?.prependContext).toContain("Simulate roles:");
   });
+
+  it("tolerates missing or malformed before_prompt_build payloads", async () => {
+    const { default: plugin } = await import("../index.js");
+    const { api, hooks } = setupApi({ enabled: true, teamSize: 3 });
+
+    plugin.register(api as never);
+
+    const beforePromptBuild = hooks.get("before_prompt_build");
+    expect(beforePromptBuild).toBeTypeOf("function");
+
+    const malformedPayloads: unknown[] = [undefined, null, "oops", 42, {}, { event: null }, { event: { messages: null } }];
+
+    for (const payload of malformedPayloads) {
+      await expect(beforePromptBuild!(payload)).resolves.not.toThrow();
+    }
+  });
+
+  it("tolerates missing or malformed llm_input/llm_output payloads", async () => {
+    const { default: plugin } = await import("../index.js");
+    const { api, hooks, logger } = setupApi({ enabled: true, teamSize: 3 });
+
+    plugin.register(api as never);
+
+    const llmInput = hooks.get("llm_input");
+    const llmOutput = hooks.get("llm_output");
+
+    expect(llmInput).toBeTypeOf("function");
+    expect(llmOutput).toBeTypeOf("function");
+
+    const malformedPayloads: unknown[] = [undefined, null, "oops", 42, {}, { event: null }, { event: { assistantTexts: "bad" } }];
+
+    for (const payload of malformedPayloads) {
+      await expect(llmInput!(payload)).resolves.not.toThrow();
+      await expect(llmOutput!(payload)).resolves.not.toThrow();
+    }
+
+    expect(logger.info).toHaveBeenCalled();
+  });
+
 });

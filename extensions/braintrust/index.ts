@@ -179,10 +179,11 @@ export default {
       },
     });
 
-    api.on("before_prompt_build", async ({ event, context }) => {
+    api.on("before_prompt_build", async (payload) => {
       if (!enabled) return;
-      const e = event as PluginHookBeforePromptBuildEvent;
-      const prompt = extractPromptFromMessages(e.messages);
+      const event = ((payload as any)?.event ?? payload ?? {}) as PluginHookBeforePromptBuildEvent;
+      const context = ((payload as any)?.context ?? {}) as any;
+      const prompt = extractPromptFromMessages((event as any)?.messages);
       const execute = resolveRuntimeExecutor(api, context);
 
       if (!execute || !prompt) {
