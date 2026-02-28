@@ -5,10 +5,27 @@ import type {
   PluginHookLlmOutputEvent,
 } from "openclaw/plugin-sdk";
 
-import { emptyPluginConfigSchema } from "openclaw/plugin-sdk";
 import { buildUnavailableNotice, DEFAULT_QUORUM, evaluateQuorum, type QuorumEvaluation } from "./src/policy.js";
 import { runRuntimeBridge, type CandidateRunnerInput, type CandidateRunnerOutput } from "./src/runtime-bridge.js";
 import { readSettings } from "./src/settings.js";
+
+
+const braintrustConfigSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    enabled: { type: "boolean", default: false },
+    teamSize: { type: "integer", minimum: 1, maximum: 4, default: 3 },
+    strategy: { type: "string", enum: ["independent", "debate", "panel"], default: "panel" },
+    model: { type: "string", default: "gemini-3-flash-preview" },
+    criticModel: { type: "string", default: "openai-codex/gpt-5.3-codex" },
+    researcherModel: { type: "string", default: "grok-4-1-fast-reasoning" },
+    synthModel: { type: "string", default: "gemini-3.1-pro-preview" },
+    timeoutSeconds: { type: "integer", minimum: 10, maximum: 300, default: 90 },
+    minParticipatingAgents: { type: "integer", minimum: 1, maximum: 4, default: 2 },
+    minAnsweringAgents: { type: "integer", minimum: 1, maximum: 4, default: 2 },
+  },
+} as const;
 
 type RuntimeExecuteInput = {
   model: string;
@@ -126,7 +143,7 @@ export default {
   id: "braintrust-plugin",
   name: "Braintrust",
   description: "Multi-agent orchestration control plane",
-  configSchema: emptyPluginConfigSchema(),
+  configSchema: braintrustConfigSchema,
 
   register(api: OpenClawPluginApi) {
     const settings = readSettings(api.pluginConfig);
