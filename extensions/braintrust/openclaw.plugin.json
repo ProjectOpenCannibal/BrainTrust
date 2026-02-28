@@ -1,5 +1,5 @@
 {
-  "id": "braintrust",
+  "id": "braintrust-plugin",
   "configSchema": {
     "type": "object",
     "additionalProperties": false,

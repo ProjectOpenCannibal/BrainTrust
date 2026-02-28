@@ -32,3 +32,6 @@ pnpm vitest run extensions/braintrust/src/policy.test.ts extensions/braintrust/s
 - critic (`criticModel`): `openai-codex/gpt-5.3-codex`
 - synthesizer (`synthModel`): `gemini-3.1-pro-preview`
 - researcher (`researcherModel`): `grok-4-1-fast-reasoning`
+
+
+Note: plugin id is `braintrust-plugin`; command remains `/braintrust`.

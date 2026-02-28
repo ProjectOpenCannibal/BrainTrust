@@ -123,7 +123,7 @@ function buildFallbackPrepend(settings: ReturnType<typeof readSettings>): string
 }
 
 export default {
-  id: "braintrust",
+  id: "braintrust-plugin",
   name: "Braintrust",
   description: "Multi-agent orchestration control plane",
   configSchema: emptyPluginConfigSchema(),
