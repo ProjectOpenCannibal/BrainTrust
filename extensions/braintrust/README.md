@@ -25,3 +25,10 @@ See `src/policy.ts` and `src/policy.test.ts`.
 ```bash
 pnpm vitest run extensions/braintrust/src/policy.test.ts extensions/braintrust/src/settings.test.ts
 ```
+
+
+## Default model routing
+- solver (`model`): `gemini-3-flash-preview`
+- critic (`criticModel`): `openai-codex/gpt-5.3-codex`
+- synthesizer (`synthModel`): `gemini-3.1-pro-preview`
+- additional small-model lane (runtime wiring target): `grok-4-1-fast-reasoning`
