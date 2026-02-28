@@ -1,6 +1,6 @@
 import { buildUnavailableNotice, evaluateQuorum, type Candidate, type CandidateStatus } from "./policy.js";
 import type { BraintrustSettings } from "./settings.js";
-import { synthesizeDeterministic } from "./synth.js";
+import { synthesizeDeterministic, type SynthesisOutput } from "./synth.js";
 
 export type CandidateRunnerInput = {
   role: "solver" | "critic" | "researcher";
@@ -27,6 +27,7 @@ export type RuntimeBridgeResult = {
   candidates: Candidate[];
   unavailable: boolean;
   reason?: string;
+  synthesis?: SynthesisOutput;
 };
 
 function roleFor(index: number): CandidateRunnerInput["role"] {
@@ -47,32 +48,67 @@ function classifyError(error: unknown): CandidateStatus {
   return "error";
 }
 
+function isLikelyRefusal(text: string): boolean {
+  const t = text.trim().toLowerCase();
+  if (!t) return false;
+  return [
+    "i can't",
+    "i cannot",
+    "can't help with",
+    "cannot help with",
+    "cannot comply",
+    "i'm sorry",
+    "i am sorry",
+    "as an ai",
+    "unable to assist",
+    "i must refuse",
+  ].some((needle) => t.includes(needle));
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutSeconds: number): Promise<T> {
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutHandle = setTimeout(() => reject(new Error(`timeout after ${timeoutSeconds}s`)), timeoutSeconds * 1000);
+  });
+
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timeoutHandle) clearTimeout(timeoutHandle);
+  }
+}
+
 export async function runRuntimeBridge(
   input: RuntimeBridgeInput,
   runCandidate: CandidateRunner,
 ): Promise<RuntimeBridgeResult> {
   const tasks = Array.from({ length: input.settings.teamSize }, async (_, i) => {
     const id = `agent-${i + 1}`;
+    const model = modelFor(i, input.settings);
     const started = Date.now();
     try {
-      const out = await runCandidate({
-        role: roleFor(i),
-        model: modelFor(i, input.settings),
-        prompt: input.prompt,
-        timeoutSeconds: input.settings.timeoutSeconds,
-      });
+      const out = await withTimeout(
+        runCandidate({
+          role: roleFor(i),
+          model,
+          prompt: input.prompt,
+          timeoutSeconds: input.settings.timeoutSeconds,
+        }),
+        input.settings.timeoutSeconds,
+      );
       const latencyMs = out.latencyMs ?? Date.now() - started;
+      const refusal = out.refusal ?? isLikelyRefusal(out.text);
       return {
         id,
-        model: modelFor(i, input.settings),
-        status: out.refusal ? "refusal" : "ok",
+        model,
+        status: refusal ? "refusal" : "ok",
         text: out.text,
         latencyMs,
       } as Candidate;
     } catch (err) {
       return {
         id,
-        model: modelFor(i, input.settings),
+        model,
         status: classifyError(err),
         latencyMs: Date.now() - started,
       } as Candidate;
@@ -112,5 +148,6 @@ export async function runRuntimeBridge(
     final,
     candidates,
     unavailable: false,
+    synthesis,
   };
 }
