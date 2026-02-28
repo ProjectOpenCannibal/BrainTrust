@@ -3,7 +3,8 @@
 Feature-flagged plugin path for multi-agent orchestration in OpenClaw.
 
 ## Current behavior (implemented)
-- `/braintrust on|off|status|unavailable`
+- Chat/auto-reply surfaces: `/braintrust on|off|status|unavailable` (via `registerCommand`)
+- Local CLI surface: `openclaw braintrust [on|off|status|unavailable]` (via `registerCli`)
 - Configurable team size / strategy / model roles
 - Quorum contract configuration (`minParticipatingAgents`, `minAnsweringAgents`)
 - Prompt injection with explicit quorum policy + unavailable contract
@@ -13,6 +14,8 @@ Feature-flagged plugin path for multi-agent orchestration in OpenClaw.
 ## Important limitation (still pending)
 This plugin **does not yet perform true parallel fan-out/fan-in orchestration** by itself.
 It sets control policy and prompt/lifecycle behavior; runtime fan-out wiring remains a core integration task.
+
+Also note: `openclaw agent --local --message '/braintrust ...'` does not route through plugin slash-command dispatch. Use `openclaw braintrust ...` for local CLI control.
 
 ## Quorum contract
 - Minimum participating agents: default `2`

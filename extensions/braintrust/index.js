@@ -21,6 +21,11 @@ function formatQuorumStatus(e) {
   if (!e) return `quorum: ${DEFAULT_QUORUM.minParticipatingAgents}/${DEFAULT_QUORUM.minAnsweringAgents}`;
   return `participating=${e.participating} answering=${e.answering} refused=${e.refused} failed=${e.failed}`;
 }
+function parseBraintrustAction(raw) {
+  const arg = (raw ?? "status").trim().toLowerCase();
+  if (arg === "on" || arg === "off" || arg === "unavailable") return arg;
+  return "status";
+}
 function extractPromptFromMessages(messages) {
   if (!Array.isArray(messages)) return "";
   for (let i = messages.length - 1; i >= 0; i -= 1) {
@@ -122,36 +127,48 @@ var index_default = {
       `minAnswering=${settings.minAnsweringAgents}`,
       formatQuorumStatus(lastQuorumEvaluation)
     ].join(" \xB7 ");
+    const renderUnavailable = () => buildUnavailableNotice(
+      lastQuorumEvaluation ?? {
+        participating: 0,
+        answering: 0,
+        refused: 0,
+        failed: settings.teamSize,
+        meetsQuorum: false,
+        reason: `only 0/${settings.teamSize} agents participated`
+      }
+    );
+    const executeBraintrustAction = (action) => {
+      if (action === "on") {
+        enabled = true;
+        return `\u2705 ${statusLine()}`;
+      }
+      if (action === "off") {
+        enabled = false;
+        return `\u{1F6D1} ${statusLine()}`;
+      }
+      if (action === "unavailable") {
+        return renderUnavailable();
+      }
+      return statusLine();
+    };
     api.registerCommand({
       name: "braintrust",
       description: "Control Braintrust mode: /braintrust on|off|status|unavailable",
       acceptsArgs: true,
-      handler: async (ctx) => {
-        const arg = (ctx.args ?? "status").trim().toLowerCase();
-        if (arg === "on") {
-          enabled = true;
-          return { text: `\u2705 ${statusLine()}` };
-        }
-        if (arg === "off") {
-          enabled = false;
-          return { text: `\u{1F6D1} ${statusLine()}` };
-        }
-        if (arg === "unavailable") {
-          const fallback = buildUnavailableNotice(
-            lastQuorumEvaluation ?? {
-              participating: 0,
-              answering: 0,
-              refused: 0,
-              failed: settings.teamSize,
-              meetsQuorum: false,
-              reason: `only 0/${settings.teamSize} agents participated`
-            }
-          );
-          return { text: fallback };
-        }
-        return { text: statusLine() };
-      }
+      handler: async (ctx) => ({ text: executeBraintrustAction(parseBraintrustAction(ctx.args)) })
     });
+    api.registerCli(
+      ({ program }) => {
+        program
+          .command("braintrust")
+          .description("Braintrust controls for local CLI surfaces")
+          .argument("[action]", "on|off|status|unavailable", "status")
+          .action((action) => {
+            console.log(executeBraintrustAction(parseBraintrustAction(action)));
+          });
+      },
+      { commands: ["braintrust"] }
+    );
     api.on("before_prompt_build", async (payload) => {
       if (!enabled) return;
       const event = payload?.event ?? payload ?? {};

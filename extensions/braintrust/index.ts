@@ -9,7 +9,6 @@ import { buildUnavailableNotice, DEFAULT_QUORUM, evaluateQuorum, type QuorumEval
 import { runRuntimeBridge, type CandidateRunnerInput, type CandidateRunnerOutput } from "./src/runtime-bridge.js";
 import { readSettings } from "./src/settings.js";
 
-
 const braintrustConfigSchema = {
   type: "object",
   additionalProperties: false,
@@ -35,10 +34,17 @@ type RuntimeExecuteInput = {
 };
 
 type RuntimeExecuteFn = (input: RuntimeExecuteInput) => Promise<CandidateRunnerOutput>;
+type BraintrustAction = "on" | "off" | "status" | "unavailable";
 
 function formatQuorumStatus(e?: QuorumEvaluation): string {
   if (!e) return `quorum: ${DEFAULT_QUORUM.minParticipatingAgents}/${DEFAULT_QUORUM.minAnsweringAgents}`;
   return `participating=${e.participating} answering=${e.answering} refused=${e.refused} failed=${e.failed}`;
+}
+
+function parseBraintrustAction(raw?: string): BraintrustAction {
+  const arg = (raw ?? "status").trim().toLowerCase();
+  if (arg === "on" || arg === "off" || arg === "unavailable") return arg;
+  return "status";
 }
 
 function extractPromptFromMessages(messages: unknown): string {
@@ -88,11 +94,7 @@ function readTextOutput(out: unknown): string {
 }
 
 function resolveRuntimeExecutor(api: OpenClawPluginApi, runtimeContext: unknown): RuntimeExecuteFn | undefined {
-  const source = [
-    runtimeContext as Record<string, unknown> | undefined,
-    api as unknown as Record<string, unknown>,
-  ];
-
+  const source = [runtimeContext as Record<string, unknown> | undefined, api as unknown as Record<string, unknown>];
   const names = ["runModel", "invokeModel", "runLlm", "invokeLlm", "complete"];
 
   for (const obj of source) {
@@ -114,9 +116,7 @@ function resolveRuntimeExecutor(api: OpenClawPluginApi, runtimeContext: unknown)
           ],
         });
         const text = readTextOutput(out).trim();
-        if (!text) {
-          throw new Error("empty output");
-        }
+        if (!text) throw new Error("empty output");
         return {
           text,
           refusal: /\b(cannot comply|i can't|i cannot|refuse|not able)\b/i.test(text),
@@ -165,36 +165,50 @@ export default {
         formatQuorumStatus(lastQuorumEvaluation),
       ].join(" · ");
 
+    const renderUnavailable = () =>
+      buildUnavailableNotice(
+        lastQuorumEvaluation ?? {
+          participating: 0,
+          answering: 0,
+          refused: 0,
+          failed: settings.teamSize,
+          meetsQuorum: false,
+          reason: `only 0/${settings.teamSize} agents participated`,
+        },
+      );
+
+    const executeBraintrustAction = (action: BraintrustAction): string => {
+      if (action === "on") {
+        enabled = true;
+        return `✅ ${statusLine()}`;
+      }
+      if (action === "off") {
+        enabled = false;
+        return `🛑 ${statusLine()}`;
+      }
+      if (action === "unavailable") return renderUnavailable();
+      return statusLine();
+    };
+
     api.registerCommand({
       name: "braintrust",
       description: "Control Braintrust mode: /braintrust on|off|status|unavailable",
       acceptsArgs: true,
-      handler: async (ctx) => {
-        const arg = (ctx.args ?? "status").trim().toLowerCase();
-        if (arg === "on") {
-          enabled = true;
-          return { text: `✅ ${statusLine()}` };
-        }
-        if (arg === "off") {
-          enabled = false;
-          return { text: `🛑 ${statusLine()}` };
-        }
-        if (arg === "unavailable") {
-          const fallback = buildUnavailableNotice(
-            lastQuorumEvaluation ?? {
-              participating: 0,
-              answering: 0,
-              refused: 0,
-              failed: settings.teamSize,
-              meetsQuorum: false,
-              reason: `only 0/${settings.teamSize} agents participated`,
-            },
-          );
-          return { text: fallback };
-        }
-        return { text: statusLine() };
-      },
+      handler: async (ctx) => ({ text: executeBraintrustAction(parseBraintrustAction(ctx.args)) }),
     });
+
+    api.registerCli(
+      ({ program }) => {
+        program
+          .command("braintrust")
+          .description("Braintrust controls for local CLI surfaces")
+          .argument("[action]", "on|off|status|unavailable", "status")
+          .action((action: string) => {
+            console.log(executeBraintrustAction(parseBraintrustAction(action)));
+          });
+      },
+      { commands: ["braintrust"] },
+    );
 
     api.on("before_prompt_build", async (payload) => {
       if (!enabled) return;
@@ -251,18 +265,16 @@ export default {
       if (!enabled) return;
       const event = ((payload as any)?.event ?? payload) as PluginHookLlmInputEvent;
       const context = ((payload as any)?.context ?? {}) as any;
-      const e = event;
       api.logger.info(
-        `[braintrust] llm_input run=${(e as any)?.runId ?? "unknown"} session=${context?.sessionKey ?? "unknown"} model=${(e as any)?.model ?? "unknown"}`,
+        `[braintrust] llm_input run=${(event as any)?.runId ?? "unknown"} session=${context?.sessionKey ?? "unknown"} model=${(event as any)?.model ?? "unknown"}`,
       );
     });
 
     api.on("llm_output", async (payload) => {
       if (!enabled) return;
       const event = ((payload as any)?.event ?? payload) as PluginHookLlmOutputEvent;
-      const e = event;
       api.logger.info(
-        `[braintrust] llm_output run=${(e as any)?.runId ?? "unknown"} model=${(e as any)?.model ?? "unknown"} responses=${Array.isArray((e as any)?.assistantTexts) ? (e as any).assistantTexts.length : 0}`,
+        `[braintrust] llm_output run=${(event as any)?.runId ?? "unknown"} model=${(event as any)?.model ?? "unknown"} responses=${Array.isArray((event as any)?.assistantTexts) ? (event as any).assistantTexts.length : 0}`,
       );
     });
   },
