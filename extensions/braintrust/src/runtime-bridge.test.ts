@@ -78,3 +78,33 @@ describe("runRuntimeBridge", () => {
     expect(result.unavailable).toBe(true);
   });
 });
+
+
+  it("uses four distinct models when teamSize=4", async () => {
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      enabled: true,
+      teamSize: 4,
+      model: "gemini-3-flash-preview",
+      criticModel: "openai-codex/gpt-5.3-codex",
+      researcherModel: "grok-4-1-fast-reasoning",
+      synthModel: "gemini-3.1-pro-preview",
+      minParticipatingAgents: 2,
+      minAnsweringAgents: 2,
+    };
+    const seen = [];
+    const result = await runRuntimeBridge(
+      { prompt: "hello", settings },
+      async ({ model }) => {
+        seen.push(model);
+        return { text: `ok-${model}`, refusal: false };
+      },
+    );
+    expect(result.unavailable).toBe(false);
+    expect(new Set(seen)).toEqual(new Set([
+      "gemini-3-flash-preview",
+      "openai-codex/gpt-5.3-codex",
+      "grok-4-1-fast-reasoning",
+      "gemini-3.1-pro-preview",
+    ]));
+  });

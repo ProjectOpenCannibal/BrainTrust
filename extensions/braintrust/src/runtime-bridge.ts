@@ -39,6 +39,7 @@ function roleFor(index: number): CandidateRunnerInput["role"] {
 function modelFor(index: number, settings: BraintrustSettings): string {
   if (index === settings.teamSize - 1) return settings.synthModel;
   if (index === 1) return settings.criticModel;
+  if (index === 2) return settings.researcherModel;
   return settings.model;
 }
 

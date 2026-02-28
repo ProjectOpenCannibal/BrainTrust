@@ -140,6 +140,7 @@ export default {
         `teamSize=${settings.teamSize}`,
         `solver=${settings.model}`,
         `critic=${settings.criticModel}`,
+        `researcher=${settings.researcherModel}`,
         `synth=${settings.synthModel}`,
         `timeout=${settings.timeoutSeconds}s`,
         `minParticipating=${settings.minParticipatingAgents}`,

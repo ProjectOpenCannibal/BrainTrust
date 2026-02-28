@@ -8,6 +8,7 @@ export type BraintrustSettings = {
   strategy: BraintrustStrategy;
   model: string;
   criticModel: string;
+  researcherModel: string;
   synthModel: string;
   timeoutSeconds: number;
   minParticipatingAgents: number;
@@ -20,6 +21,7 @@ export const DEFAULT_SETTINGS: BraintrustSettings = {
   strategy: "panel",
   model: "gemini-3-flash-preview",
   criticModel: "openai-codex/gpt-5.3-codex",
+  researcherModel: "grok-4-1-fast-reasoning",
   synthModel: "gemini-3.1-pro-preview",
   timeoutSeconds: 90,
   minParticipatingAgents: DEFAULT_QUORUM.minParticipatingAgents,
@@ -59,6 +61,7 @@ export function readSettings(raw: Record<string, unknown> | undefined): Braintru
     strategy,
     model: String(p.model ?? DEFAULT_SETTINGS.model),
     criticModel: String(p.criticModel ?? DEFAULT_SETTINGS.criticModel),
+    researcherModel: String(p.researcherModel ?? DEFAULT_SETTINGS.researcherModel),
     synthModel: String(p.synthModel ?? DEFAULT_SETTINGS.synthModel),
     timeoutSeconds: clampInt(p.timeoutSeconds, 10, 300, DEFAULT_SETTINGS.timeoutSeconds),
     minParticipatingAgents,

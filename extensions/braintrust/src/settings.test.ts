@@ -18,5 +18,6 @@ describe("readSettings", () => {
     const got = readSettings({ strategy: "debate", enabled: true });
     expect(got.strategy).toBe("debate");
     expect(got.enabled).toBe(true);
+    expect(got.researcherModel).toBe("grok-4-1-fast-reasoning");
   });
 });

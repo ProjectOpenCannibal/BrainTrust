@@ -31,4 +31,4 @@ pnpm vitest run extensions/braintrust/src/policy.test.ts extensions/braintrust/s
 - solver (`model`): `gemini-3-flash-preview`
 - critic (`criticModel`): `openai-codex/gpt-5.3-codex`
 - synthesizer (`synthModel`): `gemini-3.1-pro-preview`
-- additional small-model lane (runtime wiring target): `grok-4-1-fast-reasoning`
+- researcher (`researcherModel`): `grok-4-1-fast-reasoning`
