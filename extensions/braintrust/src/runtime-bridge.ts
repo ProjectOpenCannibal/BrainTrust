@@ -1,5 +1,6 @@
 import { buildUnavailableNotice, evaluateQuorum, type Candidate, type CandidateStatus } from "./policy.js";
 import type { BraintrustSettings } from "./settings.js";
+import { synthesizeDeterministic } from "./synth.js";
 
 export type CandidateRunnerInput = {
   role: "solver" | "critic" | "researcher";
@@ -44,18 +45,6 @@ function classifyError(error: unknown): CandidateStatus {
   const msg = String(error ?? "").toLowerCase();
   if (msg.includes("timeout")) return "timeout";
   return "error";
-}
-
-function chooseDeterministicAnswer(candidates: Candidate[]): string | null {
-  const ok = candidates.filter((c) => c.status === "ok" && c.text?.trim());
-  if (ok.length === 0) return null;
-  ok.sort((a, b) => {
-    const lenA = (a.text ?? "").length;
-    const lenB = (b.text ?? "").length;
-    if (lenA !== lenB) return lenA - lenB; // concise bias
-    return a.id.localeCompare(b.id); // deterministic tie-break
-  });
-  return ok[0].text ?? null;
 }
 
 export async function runRuntimeBridge(
@@ -105,7 +94,12 @@ export async function runRuntimeBridge(
     };
   }
 
-  const final = chooseDeterministicAnswer(candidates) ?? buildUnavailableNotice({
+  const synthesis = synthesizeDeterministic({
+    prompt: input.prompt,
+    candidates,
+  });
+
+  const final = synthesis.final ?? buildUnavailableNotice({
     participating: 0,
     answering: 0,
     refused: 0,
