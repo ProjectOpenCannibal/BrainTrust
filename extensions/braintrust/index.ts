@@ -229,19 +229,22 @@ export default {
       };
     });
 
-    api.on("llm_input", async ({ event, context }) => {
+    api.on("llm_input", async (payload) => {
       if (!enabled) return;
-      const e = event as PluginHookLlmInputEvent;
+      const event = ((payload as any)?.event ?? payload) as PluginHookLlmInputEvent;
+      const context = ((payload as any)?.context ?? {}) as any;
+      const e = event;
       api.logger.info(
-        `[braintrust] llm_input run=${e.runId} session=${context.sessionKey ?? "unknown"} model=${e.model}`,
+        `[braintrust] llm_input run=${(e as any)?.runId ?? "unknown"} session=${context?.sessionKey ?? "unknown"} model=${(e as any)?.model ?? "unknown"}`,
       );
     });
 
-    api.on("llm_output", async ({ event }) => {
+    api.on("llm_output", async (payload) => {
       if (!enabled) return;
-      const e = event as PluginHookLlmOutputEvent;
+      const event = ((payload as any)?.event ?? payload) as PluginHookLlmOutputEvent;
+      const e = event;
       api.logger.info(
-        `[braintrust] llm_output run=${e.runId} model=${e.model} responses=${e.assistantTexts.length}`,
+        `[braintrust] llm_output run=${(e as any)?.runId ?? "unknown"} model=${(e as any)?.model ?? "unknown"} responses=${Array.isArray((e as any)?.assistantTexts) ? (e as any).assistantTexts.length : 0}`,
       );
     });
   },
