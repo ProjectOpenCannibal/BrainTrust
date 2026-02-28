@@ -1,6 +1,6 @@
 import { buildUnavailableNotice, evaluateQuorum, type Candidate, type CandidateStatus } from "./policy.js";
 import type { BraintrustSettings } from "./settings.js";
-import { synthesizeDeterministic, type SynthesisOutput } from "./synth.js";
+import { synthesizeDeterministic, synthesizeWithJudge, type JudgeRunnerFn, type SynthesisOutput } from "./synth.js";
 
 export type CandidateRunnerInput = {
   role: "solver" | "critic" | "researcher";
@@ -9,10 +9,17 @@ export type CandidateRunnerInput = {
   timeoutSeconds: number;
 };
 
+export type TokenUsage = {
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+};
+
 export type CandidateRunnerOutput = {
   text: string;
   refusal?: boolean;
   latencyMs?: number;
+  tokenUsage?: TokenUsage;
 };
 
 export type CandidateRunner = (input: CandidateRunnerInput) => Promise<CandidateRunnerOutput>;
@@ -22,12 +29,20 @@ export type RuntimeBridgeInput = {
   settings: BraintrustSettings;
 };
 
+export type RuntimeBridgeTelemetry = {
+  totalLatencyMs: number;
+  candidateLatencies: { id: string; model: string; latencyMs: number; status: CandidateStatus }[];
+  judgeLatencyMs?: number;
+  judgeModel?: string;
+};
+
 export type RuntimeBridgeResult = {
   final: string;
   candidates: Candidate[];
   unavailable: boolean;
   reason?: string;
   synthesis?: SynthesisOutput;
+  telemetry?: RuntimeBridgeTelemetry;
 };
 
 function roleFor(index: number): CandidateRunnerInput["role"] {
@@ -36,8 +51,11 @@ function roleFor(index: number): CandidateRunnerInput["role"] {
   return "solver";
 }
 
-function modelFor(index: number, settings: BraintrustSettings): string {
-  if (index === settings.teamSize - 1) return settings.synthModel;
+/**
+ * All scouts use their assigned scout models.
+ * The synth model is reserved for the judge pass and never used as a scout.
+ */
+function scoutModelFor(index: number, settings: BraintrustSettings): string {
   if (index === 1) return settings.criticModel;
   if (index === 2) return settings.researcherModel;
   return settings.model;
@@ -50,8 +68,11 @@ function classifyError(error: unknown): CandidateStatus {
 }
 
 function isLikelyRefusal(text: string): boolean {
-  const t = text.trim().toLowerCase();
+  const t = text.trim();
   if (!t) return false;
+  const lower = t.toLowerCase();
+  // Avoid false positives on long substantive answers.
+  if (t.length > 500) return false;
   return [
     "i can't",
     "i cannot",
@@ -63,7 +84,7 @@ function isLikelyRefusal(text: string): boolean {
     "as an ai",
     "unable to assist",
     "i must refuse",
-  ].some((needle) => t.includes(needle));
+  ].some((needle) => lower.includes(needle));
 }
 
 async function withTimeout<T>(promise: Promise<T>, timeoutSeconds: number): Promise<T> {
@@ -82,10 +103,14 @@ async function withTimeout<T>(promise: Promise<T>, timeoutSeconds: number): Prom
 export async function runRuntimeBridge(
   input: RuntimeBridgeInput,
   runCandidate: CandidateRunner,
+  judgeRunner?: JudgeRunnerFn,
 ): Promise<RuntimeBridgeResult> {
-  const tasks = Array.from({ length: input.settings.teamSize }, async (_, i) => {
+  const bridgeStart = Date.now();
+  const scoutCount = Math.min(input.settings.teamSize, 3);
+
+  const tasks = Array.from({ length: scoutCount }, async (_, i) => {
     const id = `agent-${i + 1}`;
-    const model = modelFor(i, input.settings);
+    const model = scoutModelFor(i, input.settings);
     const started = Date.now();
     try {
       const out = await withTimeout(
@@ -128,13 +153,41 @@ export async function runRuntimeBridge(
       candidates,
       unavailable: true,
       reason: quorum.reason,
+      telemetry: {
+        totalLatencyMs: Date.now() - bridgeStart,
+        candidateLatencies: candidates.map((c) => ({
+          id: c.id,
+          model: c.model,
+          latencyMs: c.latencyMs ?? 0,
+          status: c.status,
+        })),
+      },
     };
   }
 
-  const synthesis = synthesizeDeterministic({
-    prompt: input.prompt,
-    candidates,
-  });
+  let synthesis: SynthesisOutput;
+  if (judgeRunner) {
+    synthesis = await synthesizeWithJudge(
+      { prompt: input.prompt, candidates },
+      judgeRunner,
+      input.settings.synthModel,
+      input.settings.timeoutSeconds,
+    );
+  } else {
+    synthesis = synthesizeDeterministic({ prompt: input.prompt, candidates });
+  }
+
+  const telemetry: RuntimeBridgeTelemetry = {
+    totalLatencyMs: Date.now() - bridgeStart,
+    candidateLatencies: candidates.map((c) => ({
+      id: c.id,
+      model: c.model,
+      latencyMs: c.latencyMs ?? 0,
+      status: c.status,
+    })),
+    judgeLatencyMs: synthesis.judgeLatencyMs,
+    judgeModel: synthesis.judgeModel,
+  };
 
   const final = synthesis.final ?? buildUnavailableNotice({
     participating: 0,
@@ -150,5 +203,6 @@ export async function runRuntimeBridge(
     candidates,
     unavailable: false,
     synthesis,
+    telemetry,
   };
 }

@@ -7,6 +7,7 @@ import type {
 
 import { buildUnavailableNotice, DEFAULT_QUORUM, evaluateQuorum, type QuorumEvaluation } from "./src/policy.js";
 import { runRuntimeBridge, type CandidateRunnerInput, type CandidateRunnerOutput } from "./src/runtime-bridge.js";
+import type { JudgeRunnerFn } from "./src/synth.js";
 import { readSettings } from "./src/settings.js";
 
 const braintrustConfigSchema = {
@@ -128,6 +129,40 @@ function resolveRuntimeExecutor(api: OpenClawPluginApi, runtimeContext: unknown)
   return undefined;
 }
 
+
+
+/**
+ * Build a judge runner from the same runtime executor source.
+ * The judge receives all scout outputs and merges them.
+ */
+function resolveJudgeRunner(api: OpenClawPluginApi, runtimeContext: unknown): JudgeRunnerFn | undefined {
+  const source = [runtimeContext as Record<string, unknown> | undefined, api as unknown as Record<string, unknown>];
+  const names = ["runModel", "invokeModel", "runLlm", "invokeLlm", "complete"];
+
+  for (const obj of source) {
+    if (!obj) continue;
+    for (const name of names) {
+      const fn = obj[name];
+      if (typeof fn !== "function") continue;
+      return async (input) => {
+        const out = await (fn as (payload: unknown) => Promise<unknown>)({
+          model: input.model,
+          timeoutSeconds: input.timeoutSeconds,
+          messages: [
+            { role: "system", content: input.systemPrompt },
+            { role: "user", content: input.userPrompt },
+          ],
+        });
+        const text = readTextOutput(out).trim();
+        if (!text) throw new Error("judge returned empty output");
+        return { text };
+      };
+    }
+  }
+
+  return undefined;
+}
+
 function buildFallbackPrepend(settings: ReturnType<typeof readSettings>): string {
   return [
     "BRAINTRUST MODE ACTIVE.",
@@ -197,18 +232,20 @@ export default {
       handler: async (ctx) => ({ text: executeBraintrustAction(parseBraintrustAction(ctx.args)) }),
     });
 
-    api.registerCli(
-      ({ program }) => {
-        program
-          .command("braintrust")
-          .description("Braintrust controls for local CLI surfaces")
-          .argument("[action]", "on|off|status|unavailable", "status")
-          .action((action: string) => {
-            console.log(executeBraintrustAction(parseBraintrustAction(action)));
-          });
-      },
-      { commands: ["braintrust"] },
-    );
+    if (typeof (api as any).registerCli === "function") {
+      (api as any).registerCli(
+        ({ program }: any) => {
+          program
+            .command("braintrust")
+            .description("Braintrust controls for local CLI surfaces")
+            .argument("[action]", "on|off|status|unavailable", "status")
+            .action((action: string) => {
+              console.log(executeBraintrustAction(parseBraintrustAction(action)));
+            });
+        },
+        { commands: ["braintrust"] },
+      );
+    }
 
     api.on("before_prompt_build", async (payload) => {
       if (!enabled) return;
@@ -216,6 +253,7 @@ export default {
       const context = ((payload as any)?.context ?? {}) as any;
       const prompt = extractPromptFromMessages((event as any)?.messages);
       const execute = resolveRuntimeExecutor(api, context);
+      const judgeRun = resolveJudgeRunner(api, context);
 
       if (!execute || !prompt) {
         api.logger.info("[braintrust] runtime bridge unavailable in hook context, using policy-only prompt injection");
@@ -229,8 +267,10 @@ export default {
         return { prependContext: buildFallbackPrepend(settings) };
       }
 
-      const bridge = await runRuntimeBridge({ prompt, settings }, ({ role, model, prompt: p, timeoutSeconds }) =>
-        execute({ role, model, prompt: p, timeoutSeconds }),
+      const bridge = await runRuntimeBridge(
+        { prompt, settings },
+        ({ role, model, prompt: p, timeoutSeconds }) => execute({ role, model, prompt: p, timeoutSeconds }),
+        judgeRun ?? undefined,
       );
 
       lastQuorumEvaluation = evaluateQuorum(bridge.candidates, {
@@ -238,6 +278,15 @@ export default {
         minAnsweringAgents: settings.minAnsweringAgents,
       });
 
+
+      // Log telemetry
+      if (bridge.telemetry) {
+        api.logger.info(
+          `[braintrust] telemetry: total=${bridge.telemetry.totalLatencyMs}ms ` +
+            `scouts=[${bridge.telemetry.candidateLatencies.map((c) => `${c.id}:${c.status}:${c.latencyMs}ms`).join(", ")}] ` +
+            `judge=${bridge.telemetry.judgeLatencyMs ?? "n/a"}ms model=${bridge.telemetry.judgeModel ?? "deterministic"}`,
+        );
+      }
       api.logger.info(
         `[braintrust] runtime bridge complete unavailable=${bridge.unavailable} candidates=${bridge.candidates.length}`,
       );

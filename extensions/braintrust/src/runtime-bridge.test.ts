@@ -77,10 +77,8 @@ describe("runRuntimeBridge", () => {
     expect(result.candidates.filter((c) => c.status === "refusal")).toHaveLength(2);
     expect(result.unavailable).toBe(true);
   });
-});
 
-
-  it("uses four distinct models when teamSize=4", async () => {
+  it("uses three scout models and reserves synth model for judge", async () => {
     const settings = {
       ...DEFAULT_SETTINGS,
       enabled: true,
@@ -92,7 +90,7 @@ describe("runRuntimeBridge", () => {
       minParticipatingAgents: 2,
       minAnsweringAgents: 2,
     };
-    const seen = [];
+    const seen: string[] = [];
     const result = await runRuntimeBridge(
       { prompt: "hello", settings },
       async ({ model }) => {
@@ -101,10 +99,13 @@ describe("runRuntimeBridge", () => {
       },
     );
     expect(result.unavailable).toBe(false);
-    expect(new Set(seen)).toEqual(new Set([
-      "gemini-3-flash-preview",
-      "openai-codex/gpt-5.3-codex",
-      "grok-4-1-fast-reasoning",
-      "gemini-3.1-pro-preview",
-    ]));
+    expect(new Set(seen)).toEqual(
+      new Set([
+        "gemini-3-flash-preview",
+        "openai-codex/gpt-5.3-codex",
+        "grok-4-1-fast-reasoning",
+      ]),
+    );
+    expect(result.telemetry?.judgeModel ?? "deterministic").toBe("deterministic");
   });
+});

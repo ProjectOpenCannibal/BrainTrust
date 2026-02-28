@@ -36,7 +36,7 @@ describe("braintrust plugin runtime integration", () => {
   });
 
   it("executes runtime bridge through before_prompt_build when runtime executor exists", async () => {
-    const { default: plugin } = await import("../index.js");
+    const { default: plugin } = await import("../index.ts");
     const calls: Array<{ model: string; role: string }> = [];
     const { api, hooks } = setupApi({ enabled: true, teamSize: 3 });
 
@@ -56,13 +56,13 @@ describe("braintrust plugin runtime integration", () => {
       },
     });
 
-    expect(calls).toHaveLength(3);
+    expect(calls).toHaveLength(4);
     expect(out?.prependContext).toContain("Use this runtime-bridge synthesis as your final answer.");
     expect(out?.prependContext).toContain("4");
   });
 
   it("falls back to policy-only injection when runtime executor is missing", async () => {
-    const { default: plugin } = await import("../index.js");
+    const { default: plugin } = await import("../index.ts");
     const { api, hooks } = setupApi({ enabled: true, teamSize: 3 });
 
     plugin.register(api as never);
@@ -78,7 +78,7 @@ describe("braintrust plugin runtime integration", () => {
   });
 
   it("tolerates missing or malformed before_prompt_build payloads", async () => {
-    const { default: plugin } = await import("../index.js");
+    const { default: plugin } = await import("../index.ts");
     const { api, hooks } = setupApi({ enabled: true, teamSize: 3 });
 
     plugin.register(api as never);
@@ -94,7 +94,7 @@ describe("braintrust plugin runtime integration", () => {
   });
 
   it("tolerates missing or malformed llm_input/llm_output payloads", async () => {
-    const { default: plugin } = await import("../index.js");
+    const { default: plugin } = await import("../index.ts");
     const { api, hooks, logger } = setupApi({ enabled: true, teamSize: 3 });
 
     plugin.register(api as never);

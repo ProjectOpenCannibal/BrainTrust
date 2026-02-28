@@ -38,7 +38,7 @@ describe("live braintrust validation flow", () => {
   });
 
   it("validates /braintrust on + status + synthesized output path", async () => {
-    const { default: plugin } = await import("../index.js");
+    const { default: plugin } = await import("../index.ts");
     const { api, hooks, commands } = setupApi({ enabled: false, teamSize: 3 });
 
     plugin.register(api as never);
@@ -78,7 +78,7 @@ describe("live braintrust validation flow", () => {
   });
 
   it("returns explicit unavailable notice when quorum is not met", async () => {
-    const { default: plugin } = await import("../index.js");
+    const { default: plugin } = await import("../index.ts");
     const { api, hooks, commands } = setupApi({ enabled: true, teamSize: 4, minAnsweringAgents: 3, minParticipatingAgents: 3 });
 
     plugin.register(api as never);
